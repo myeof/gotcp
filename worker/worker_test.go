@@ -1,7 +1,5 @@
 package worker
 
-// go test -v onemt-file/p2p/worker
-// go test -v onemt-file/p2p/worker -run TestInitWorker
 import (
 	"testing"
 	"time"
