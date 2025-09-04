@@ -20,7 +20,7 @@ func NewWorker(n, l int) *Worker {
 		jobs: make(chan func(), l),
 	}
 	// 启动多个goroutine作为worker
-	for i := 0; i < n; i++ {
+	for range n {
 		w.wg.Add(1)
 		go func() {
 			defer w.wg.Done()
@@ -29,9 +29,16 @@ func NewWorker(n, l int) *Worker {
 				if !ok {
 					return
 				}
-				atomic.AddInt64(&w.n, 1)
-				job()
-				atomic.AddInt64(&w.n, -1)
+				func() {
+					defer func() {
+						if err := recover(); err != nil {
+							log.Printf("panic: %v", err)
+						}
+					}()
+					atomic.AddInt64(&w.n, 1)
+					defer atomic.AddInt64(&w.n, -1)
+					job()
+				}()
 			}
 		}()
 	}
@@ -44,12 +51,15 @@ func (w *Worker) StartJob(job func()) {
 
 func (w *Worker) Shutdown() chan struct{} {
 	close(w.jobs)
-	w.wg.Wait()
-	ch := make(chan struct{})
-	defer close(ch)
+	ch := make(chan struct{}, 1)
+	go func() {
+		w.wg.Wait()
+		close(ch)
+	}()
 	return ch
 }
 
 func (w *Worker) Status() {
-	log.Printf("[%d] jobs running, [%d] job pendding", w.n, len(w.jobs))
+	n := atomic.LoadInt64(&w.n)
+	log.Printf("[%d] jobs running, [%d] jobs pendding", n, len(w.jobs))
 }
