@@ -75,8 +75,8 @@ func (s *Server) Serve(router *Router) error {
 	defer func() {
 		s.worker.Shutdown()
 		s.wg.Wait()
+		s.listener.Close()
 		s.listener = nil
-		_ = s.listener.Close()
 		s.state = StateTerminate
 	}()
 
