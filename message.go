@@ -9,8 +9,6 @@ const MaxMsgSize = 1024 * 1024 * 2 // 1MB
 type Message struct {
 	size uint32
 
-	requestID []byte
-
 	id int32
 
 	headLength uint32
@@ -22,10 +20,6 @@ type Message struct {
 
 func NewMessage() *Message {
 	return &Message{}
-}
-
-func (msg *Message) RequestID() string {
-	return string(msg.requestID)
 }
 
 func (msg *Message) ID() int32 {
@@ -41,6 +35,6 @@ func (msg *Message) Body() []byte {
 }
 
 func (msg *Message) String() string {
-	return fmt.Sprintf("RequestID=%d ID=%d HeadLan=%d DataLen=%d",
-		msg.requestID, msg.id, msg.headLength, msg.bodyLength)
+	return fmt.Sprintf("ID=%d HeadLan=%d DataLen=%d",
+		msg.id, msg.headLength, msg.bodyLength)
 }

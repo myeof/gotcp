@@ -45,10 +45,6 @@ func (c *Context) Close() error {
 
 // msg
 
-func (c *Context) RequestID() string {
-	return c.msg.RequestID()
-}
-
 func (c *Context) MsgID() int32 {
 	return c.msg.ID()
 }

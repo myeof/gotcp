@@ -78,13 +78,11 @@ func (b *connBase) beforeShutdown() {
 }
 
 func (b *connBase) configureConnection(conn *net.TCPConn) error {
-	var err error
-	err = conn.SetKeepAlive(true)
+	err := conn.SetKeepAlive(true)
 	if err != nil {
 		return err
 	}
-	err = conn.SetKeepAlivePeriod(b.hbInterval)
-	return err
+	return conn.SetKeepAlivePeriod(b.hbInterval)
 }
 
 func (b *connBase) onMessage(session *Session, msg *Message) {
