@@ -4,13 +4,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/myeof/gotcp"
+	tcp "github.com/myeof/gotcp"
 )
 
 const (
@@ -30,9 +31,7 @@ func init() {
 
 func main() {
 	var s bool
-	var c string
 	flag.BoolVar(&s, "s", s, "server")
-	flag.StringVar(&c, "c", "", "host")
 	flag.Parse()
 	if s {
 		ServerExample()
@@ -44,10 +43,29 @@ func main() {
 // examples
 
 func ServerExample() {
+	// 消息路由
 	r := tcp.NewRouter()
 	r.Use(LogHandler)
 	register(r)
-	err := tcp.ListenAndServe(host, r)
+
+	// 服务端
+	s := tcp.NewServer()
+	s.SetOnConnected(func(c *tcp.Context) {
+		log.Println("connected", c.Remote())
+	})
+	s.SetOnDisconnect(func(s *tcp.Session, err error) {
+		log.Println("disconnected", s.Remote())
+	})
+
+	// 监听端口
+	listener, err := s.Listen(host)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Println("listen", listener.Addr().String())
+
+	// 开始服务
+	err = s.Serve(r)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -56,12 +74,21 @@ func ServerExample() {
 func ClientExample() {
 	r := tcp.NewRouter()
 	register(r)
+
+	// 客户端
 	c := tcp.NewClient()
+	c.SetOnDisconnect(func(s *tcp.Session, err error) {
+		log.Println("disconnected", s.Remote())
+	})
 	c.SetOnConnected(Start)
+
+	// 连接服务端
 	err := c.Connect(host, r)
 	if err != nil {
-		if errors.Is(err, net.ErrClosed) {
-			log.Printf("exit")
+		if errors.Is(err, io.EOF) {
+			log.Printf("server closed")
+		} else if errors.Is(err, net.ErrClosed) {
+			log.Printf("client closed")
 		} else {
 			log.Fatalln(err)
 		}
@@ -83,9 +110,8 @@ func register(r *tcp.Router) {
 func LogHandler(c *tcp.Context) {
 	startTime := time.Now()
 	c.Next()
-	log.Printf("| %15s | %s | %3d | %8d | %10s\n",
+	log.Printf("| %15s | %3d | %8d | %10s\n",
 		c.Remote(),
-		c.RequestID(),
 		c.MsgID(),
 		c.MsgSize(),
 		time.Since(startTime),
@@ -94,6 +120,7 @@ func LogHandler(c *tcp.Context) {
 
 func Start(c *tcp.Context) {
 	log.Println("start")
+	var err error
 	var input string
 	for {
 		fmt.Printf("请输入内容: ")
@@ -112,19 +139,22 @@ func Start(c *tcp.Context) {
 			_ = c.Close()
 			return
 		case "ping":
-			_ = c.SendText(PingMsgId, "Ping")
+			err = c.SendText(PingMsgId, "Ping")
 		case "json":
-			_ = c.SendJSON(JSONMsgId, map[string]interface{}{
+			err = c.SendJSON(JSONMsgId, map[string]interface{}{
 				"code": 0,
 			})
 		case "file":
-			_ = c.SendJSON(ReqFileMsgId, map[string]interface{}{
+			err = c.SendJSON(ReqFileMsgId, map[string]interface{}{
 				"file":   "example/example.go",
 				"length": 100,
 				"offset": 0,
 			})
 		default:
-			_ = c.SendText(TextMsgId, input)
+			err = c.SendText(TextMsgId, input)
+		}
+		if err != nil {
+			log.Println(err)
 		}
 		input = ""
 	}
@@ -153,22 +183,29 @@ func JSON(c *tcp.Context) {
 }
 
 func HandleRequestFile(c *tcp.Context) {
-	var err error
-
 	var body map[string]interface{}
-	_ = c.BindJSON(&body)
+	err := c.BindJSON(&body)
+	if err != nil {
+		_ = c.SendText(TextMsgId, err.Error())
+		return
+	}
 	filename, ok := body["file"].(string)
 	if !ok {
 		_ = c.SendText(TextMsgId, "error: filename")
 		return
 	}
 	length, ok := body["length"].(float64)
-	if !ok {
-		length = 0
+	if !ok || length == 0 {
+		_ = c.SendText(TextMsgId, "error: length")
+		return
 	}
 	offset, ok := body["offset"].(float64)
 	if !ok {
 		offset = 0
+	}
+	if int(length) > 1024*1024*5 {
+		_ = c.SendText(TextMsgId, "error: length too long")
+		return
 	}
 
 	var data = make([]byte, int(length))
@@ -189,7 +226,8 @@ func HandleRequestFile(c *tcp.Context) {
 			"offset": offset,
 			"length": n,
 		},
-		data[:n])
+		data[:n],
+	)
 }
 
 func HandleSaveFile(c *tcp.Context) {
